@@ -1,0 +1,36 @@
+version: '3.9'
+services:
+  foundryvtt:
+    image: 'foundryvtt'
+    build: .
+    container_name: 'foundryvtt'
+    hostname: "vtt"
+    environment:
+      ADMIN_PASSWORD: ""
+      FOUNDRY_HOSTNAME: ""
+      SSL_CERT_BASE64: "" 
+      SSL_KEY_BASE64: "" 
+    volumes:
+      - ./foundry-data:/opt/foundry-data
+    healthcheck:
+      test: ["CMD", "curl", "-fsk", "https://localhost:30000/"]
+      interval: 5s
+      timeout: 2s
+      retries: 15
+  nginx:
+    image: 'nginx'
+    build: ./nginx
+    container_name: 'nginx'
+    depends_on:
+      - "foundryvtt"
+    environment:
+      SSL_CERT_BASE64: "" 
+      SSL_KEY_BASE64: "" 
+    ports:
+      - '443:8443'
+      - '8443:8443'
+    healthcheck:
+      test: ["CMD", "curl", "-fsk", "https://localhost:8443/"]
+      interval: 5s
+      timeout: 2s
+      retries: 15

@@ -1,0 +1,88 @@
+---
+stages:
+  - build
+  - bootstrap
+  - deploy
+  - teardown
+
+docker:foundryvtt:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker/
+    - echo $DOCKER_AUTH_CONFIG > /kaniko/.docker/config.json
+    - >-
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --destination "${AWS_ECR_URL}:latest"
+  only:
+    changes:
+      - Dockerfile
+      - scripts/*
+      - foundryyvtt/*
+      - options.json
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+
+
+docker:terraform:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker/- echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"},\"$CI_DEPENDENCY_PROXY_SERVER\":{\"auth\":\"$(printf "%s:%s" ${CI_DEPENDENCY_PROXY_USER} "${CI_DEPENDENCY_PROXY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - >-
+      /kaniko/executor
+      --build-arg NEXUS_PROXY_URL=${NEXUS_PROXY_URL}
+      --context "${CI_PROJECT_DIR}/terraform"
+      --dockerfile "${CI_PROJECT_DIR}/terraform/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/terraform:latest"
+  only:
+    changes:
+      - terraform/Dockerfile
+
+bootstrap:
+  image: ${CI_REGISTRY_IMAGE}/terraform:latest
+  stage: bootstrap
+  only:
+    changes:
+      - terraform-bootstrap/**
+  script:
+    - cd terraform-bootstrap
+    - terraform init -backend-config=../env/$ENV/backend.tfvars
+    - terraform apply -auto-approve -var-file=../env/$ENV/bootstrap.tfvars
+  variables:
+    ENV: "example"
+
+deploy:
+  image: ${CI_REGISTRY_IMAGE}/terraform:latest
+  stage: deploy
+  environment:
+    name: demo
+    url: ""
+    on_stop: teardown
+  script:
+    - cd terraform-app
+    - terraform init -backend-config=../env/$ENV/backend.tfvars
+    - terraform apply -auto-approve -var-file=../env/$ENV/app.tfvars
+  variables:
+    ENV: "example"
+
+teardown:
+  image: $NEXUS_PROJECT_URL/terraform:latest
+  stage: deploy
+  environment:
+    name: demo
+    url: ""
+    action: stop
+  script:
+    - cd terraform-app
+    - terraform init -backend-config=../env/$ENV/backend.tfvars
+    - terraform destroy -auto-approve -var-file=../env/$ENV/app.tfvars -target=aws_alb_listener_rule.foundry_1 -target=aws_alb_listener_rule.foundry_2 -target=aws_ecs_service.vtt
+  variables:
+    ENV: "example"
+  when: manual

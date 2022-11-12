@@ -1,0 +1,6 @@
+aws_region  = "us-east-1"
+environment = "example"
+owner       = "example"
+project     = "foundry
+domain      = "example.com"
+email       = "example@example.com"
